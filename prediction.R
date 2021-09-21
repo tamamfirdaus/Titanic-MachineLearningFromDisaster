@@ -1,6 +1,8 @@
 # Set directory
 setwd("~/Documents/R/Titanic-MachineLearningFromDisaster")
 
+########## Data Preparation ##########
+
 # Load data
 titanic.train <- read.csv(file = "data/train.csv", stringsAsFactors = FALSE, header = TRUE)  
 titanic.test <- read.csv(file = "data/test.csv", stringsAsFactors = FALSE, header = TRUE)  
@@ -13,43 +15,44 @@ titanic.test$Survived <- NA
 # Combine data
 titanic.full <- rbind(titanic.train, titanic.test)
 
-# Clean data using median
-# titanic.full[titanic.full$Embarked=='', "Embarked"] <- 'S'
-#
-# age.median <- median(titanic.full$Age, na.rm = TRUE)
-# titanic.full[is.na(titanic.full$Age),"Age"] <- age.median
-#
-# fare.median <- median(titanic.full$Fare, na.rm = TRUE)
-# titanic.full[is.na(titanic.full$Fare),"Fare"] <- fare.median
+########## Data Pre-processing ##########
 
-# Clean data using median
+# Check missing value
+colSums(is.na(titanic.full))
+
+# Fix missing data of Embarked with most embarked value
 titanic.full[titanic.full$Embarked=='', "Embarked"] <- 'S'
 
-age.median <- median(titanic.full$Age, na.rm = TRUE)
-titanic.full[is.na(titanic.full$Age),"Age"] <- age.median
+# Fix missing data of Fare with average
+fare.mean <- round(mean(titanic.full$Fare, na.rm = TRUE),2)
+titanic.full[is.na(titanic.full$Fare),"Fare"] <- fare.mean
 
-fare.median <- median(titanic.full$Fare, na.rm = TRUE)
-titanic.full[is.na(titanic.full$Fare),"Fare"] <- fare.median
+# Fix missing data of Age
 
-upper.whisker <- boxplot.stats(titanic.full$Fare)$stats[5]
+# age.mean.mrs <- round(mean(titanic.full[(grepl("Mrs\\.",titanic.full$Name)),"Age"], na.rm = TRUE))
+# age.mean.miss <- round(mean(titanic.full[(grepl("Miss",titanic.full$Name)),"Age"], na.rm = TRUE))
+# age.mean.mr <- round(mean(titanic.full[(grepl("Mr\\.",titanic.full$Name)),"Age"], na.rm = TRUE))
+# age.mean.master <- round(mean(titanic.full[(grepl("Master",titanic.full$Name)),"Age"], na.rm = TRUE))
+
+# Fix missing data of Fare using linear regression
+upper.whisker <- boxplot.stats(titanic.full$Age)$stats[5]
 outlier.filter <- titanic.full$Fare < upper.whisker
-titanic.full[outlier.filter,]
 
-fare.equation = "Fare ~ Pclass + Sex + Age + SibSp + Parch + Embarked"
-fare.model <- lm(
-  formula = fare.equation,
+age.equation = "Age ~ Pclass + Sex + SibSp + Parch + Embarked"
+age.model <- lm(
+  formula = age.equation,
   data = titanic.full[outlier.filter,]
 )
 
-fare.row <- titanic.full[
-  is.na(titanic.full$Fare),
-  c("Pclass", "Sex", "Age", "SibSp", "Parch","Embarked")
+age.row <- titanic.full[
+  is.na(titanic.full$Age),
+  c("Pclass", "Sex", "SibSp", "Parch","Embarked")
 ]
 
-fare.predictions <- predict(fare.model, newdata = fare.row)
-titanic.full[is.na(titanic.full$Fare),"Fare"] <- fare.predictions
+age.predictions <- predict(age.model, newdata = age.row)
+titanic.full[is.na(titanic.full$Age),"Age"] <- age.predictions
 
-# Casting 
+# Casting features
 titanic.full$Pclass <- as.factor(titanic.full$Pclass)
 titanic.full$Sex <- as.factor(titanic.full$Sex)
 titanic.full$Embarked <- as.factor(titanic.full$Embarked)
@@ -58,21 +61,22 @@ titanic.full$Embarked <- as.factor(titanic.full$Embarked)
 titanic.train <- titanic.full[titanic.full$IsTrainSet==TRUE,]
 titanic.test <- titanic.full[titanic.full$IsTrainSet==FALSE,]
 
-# Casting
+# Casting survived feature
 titanic.train$Survived <- as.factor(titanic.train$Survived)
+
+########## Machine Learning ##########
 
 # Install package
 install.packages("randomForest")
 library(randomForest)
 
-
-# Create Mode
+# Create ML Model using Random Forest
 survived.equation <- "Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked"
-survived.forrmula <- as.formula(survived.equation)
-titanic.model <- randomForest(formula = survived.forrmula, data = titanic.train, 
-                              ntree = 500,mtry = 3, nodesize = 0.01 * nrow(titanic.test))
+survived.formula <- as.formula(survived.equation)
+titanic.model <- randomForest(formula = survived.formula, data = titanic.train, 
+                              ntree = 500, mtry = 3, nodesize = 0.01 * nrow(titanic.test))
 
-# Prediction
+# Make prediction
 features.equation <- "Pclass + Sex + Age + SibSp + Parch + Fare + Embarked"
 Survived <- predict(titanic.model, newdata = titanic.test)
 

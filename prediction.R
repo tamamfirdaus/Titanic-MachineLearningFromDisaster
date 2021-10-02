@@ -1,97 +1,102 @@
+########## Data Preparation ##########
+
 # Set directory
 setwd("~/Documents/R/Titanic-MachineLearningFromDisaster")
 
-########## Data Preparation ##########
-
 # Load data
-titanic.train <- read.csv(file = "data/train.csv", stringsAsFactors = FALSE, header = TRUE)  
-titanic.test <- read.csv(file = "data/test.csv", stringsAsFactors = FALSE, header = TRUE)  
+train_df <- read.csv(file = "data/train.csv", na.strings = c("", "NA"), stringsAsFactors = FALSE, header = TRUE)  
+test_df <- read.csv(file = "data/test.csv", na.strings = c("", "NA"), stringsAsFactors = FALSE, header = TRUE)  
 
-# Add column to table
-titanic.train$IsTrainSet <- TRUE
-titanic.test$IsTrainSet <- FALSE
-titanic.test$Survived <- NA
+########## Data Exploration ##########
 
-# Combine data
-titanic.full <- rbind(titanic.train, titanic.test)
+# Get information
+head(train_df)
+str(train_df)
+summary(train_df)
+colSums(is.na(train_df))
 
-########## Data Pre-processing ##########
+head(test_df)
+str(test_df)
+summary(test_df)
+colSums(is.na(test_df))
 
-# Check missing value
-colSums(is.na(titanic.full))
+# Fix missing Embarked data in train_df with common value 
+sort(table(train_df$Embarked), decreasing = TRUE)
+train_df[is.na(train_df$Embarked),"Embarked"] <- 'S'
+         
+# Fix missing Fare data in test_df with mean value
+fare_mean <- round(mean(c(train_df$Fare,test_df$Fare), na.rm = TRUE),2)
+test_df[is.na(test_df$Fare),"Fare"] <- fare_mean
 
-# Fix missing data of Embarked with most embarked value
-titanic.full[titanic.full$Embarked=='', "Embarked"] <- 'S'
+# Fix missing Age data with mean value
+age_mean <- round(mean(c(train_df$Age,test_df$Age), na.rm = TRUE),2)
+train_df[is.na(train_df$Age),"Age"] <- age_mean
+test_df[is.na(test_df$Age),"Age"] <- age_mean
 
-# Fix missing data of Fare with average
-fare.mean <- round(mean(titanic.full$Fare, na.rm = TRUE),2)
-titanic.full[is.na(titanic.full$Fare),"Fare"] <- fare.mean
+# Drop Cabin data because it has many missing data
+train_df <- subset(train_df, select = -c(Cabin))
+test_df <- subset(test_df, select = -c(Cabin))
 
-# Fix missing data of Age
+# Converting fatures
+train_df$Survived <- as.factor(train_df$Survived)
 
-# age.mean.mrs <- round(mean(titanic.full[(grepl("Mrs\\.",titanic.full$Name)),"Age"], na.rm = TRUE))
-# age.mean.miss <- round(mean(titanic.full[(grepl("Miss",titanic.full$Name)),"Age"], na.rm = TRUE))
-# age.mean.mr <- round(mean(titanic.full[(grepl("Mr\\.",titanic.full$Name)),"Age"], na.rm = TRUE))
-# age.mean.master <- round(mean(titanic.full[(grepl("Master",titanic.full$Name)),"Age"], na.rm = TRUE))
+train_df$Pclass <- as.factor(train_df$Pclass)
+test_df$Pclass <- as.factor(test_df$Pclass)
 
-# Fix missing data of Fare using linear regression
-upper.whisker <- boxplot.stats(titanic.full$Age)$stats[5]
-outlier.filter <- titanic.full$Fare < upper.whisker
+train_df$Sex <- as.factor(train_df$Sex)
+test_df$Sex <- as.factor(test_df$Sex)
 
-age.equation = "Age ~ Pclass + Sex + SibSp + Parch + Embarked"
-age.model <- lm(
-  formula = age.equation,
-  data = titanic.full[outlier.filter,]
-)
+train_df$Fare <- as.integer(train_df$Fare)
+test_df$Fare <- as.integer(test_df$Fare)
 
-age.row <- titanic.full[
-  is.na(titanic.full$Age),
-  c("Pclass", "Sex", "SibSp", "Parch","Embarked")
-]
+train_df$Embarked <- as.factor(train_df$Embarked)
+test_df$Embarked <- as.factor(test_df$Embarked)
 
-age.predictions <- predict(age.model, newdata = age.row)
-titanic.full[is.na(titanic.full$Age),"Age"] <- age.predictions
+# Make new feature
+# group_age
+train_df$GroupAge <- cut(train_df$Age,
+                         breaks = c(0,10,20,30,40,50,100),
+                         labels = c(1,2,3,4,5,6))
 
-# Casting features
-titanic.full$Pclass <- as.factor(titanic.full$Pclass)
-titanic.full$Sex <- as.factor(titanic.full$Sex)
-titanic.full$Embarked <- as.factor(titanic.full$Embarked)
+test_df$GroupAge <- cut(test_df$Age,
+                         breaks = c(0,10,20,30,40,50,100),
+                         labels = c(1,2,3,4,5,6))
 
-# Split data back to train and test
-titanic.train <- titanic.full[titanic.full$IsTrainSet==TRUE,]
-titanic.test <- titanic.full[titanic.full$IsTrainSet==FALSE,]
+train_df$GroupAge <- as.factor(train_df$GroupAge)
+test_df$GroupAge <- as.factor(test_df$GroupAge)
 
-# Casting survived feature
-titanic.train$Survived <- as.factor(titanic.train$Survived)
+# Drop unused feature
+PassengerId <- test_df$PassengerId
+train_df <- subset(train_df, select = -c(PassengerId,Name,Age,Ticket))
+test_df <- subset(test_df, select = -c(PassengerId,Name,Age,Ticket))
 
 ########## Machine Learning ##########
+summary(train_df)
+str(train_df)
 
-# Install package
-install.packages("randomForest")
+# Uncomment to install package
+# install.packages("randomForest")
 library(randomForest)
 
 # Create ML Model using Random Forest
-survived.equation <- "Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked"
-survived.formula <- as.formula(survived.equation)
-titanic.model <- randomForest(formula = survived.formula, data = titanic.train, 
-                              ntree = 500, mtry = 3, nodesize = 0.01 * nrow(titanic.test))
+formula <- as.formula("Survived ~ .")
+model <- randomForest(formula = formula,
+                      data = train_df,
+                      ntree = 500,
+                      mtry = 3,
+                      nodesize = 0.01*nrow(test_df))
+
+# Confusion Matrix
+# install.packages('caret', dependencies = TRUE)
+library(caret)
+prediction <- predict(model, newdata = train_df)
+confusionMatrix(prediction, train_df$Survived)
 
 # Make prediction
-features.equation <- "Pclass + Sex + Age + SibSp + Parch + Fare + Embarked"
-Survived <- predict(titanic.model, newdata = titanic.test)
+Survived <- predict(model, newdata = test_df)
 
-# Create output
-PassengerId <- titanic.test$PassengerId
-output.df <- as.data.frame(PassengerId)
-output.df$Survived <- Survived
-
-# Convert to csv
-write.csv(output.df, file="kaggle_submission.csv", row.names = FALSE)
-
-
-
-
-
-
-
+# Create output in csv 
+output_df <- as.data.frame(PassengerId)
+output_df$Survived <- Survived
+write.csv(output_df, file="kaggle_submission.csv", row.names = FALSE)
 
